@@ -1,0 +1,86 @@
+from machine import Pin
+from time import sleep, ticks_ms, ticks_diff
+import sys
+import select
+
+# Motion sensor to detect marble
+sensor = Pin(4, Pin.IN)
+
+# Stepper motor pins
+IN1 = Pin(12, Pin.OUT)
+IN2 = Pin(13, Pin.OUT)
+IN3 = Pin(14, Pin.OUT)
+IN4 = Pin(27, Pin.OUT)
+
+# Stepper motor sequence (4-step)
+step_seq = [
+    [1, 0, 0, 0],
+    [1, 1, 0, 0],
+    [0, 1, 0, 0],
+    [0, 1, 1, 0],
+    [0, 0, 1, 0],
+    [0, 0, 1, 1],
+    [0, 0, 0, 1],
+    [1, 0, 0, 1]
+]
+
+step_count = len(step_seq)
+step_index = 0
+
+# Score variables
+score = 0
+max_score = 100
+points_per_hit = 10
+last_trigger_time = 0
+trigger_gap_threshold = 500  # ms (fast motion = <500ms)
+
+def update_score(score):
+    print(f"🏅 Score: {score}")
+
+def reset_score():
+    global score
+    score = 0
+    update_score(score)
+
+def rotate_stepper_motor(seconds):
+    start_time = ticks_ms()
+    while ticks_diff(ticks_ms(), start_time) < (seconds * 1000):
+        # Run the stepper motor for the specified time
+        for i in range(4):
+            for j in range(4):
+                Pin([IN1, IN2, IN3, IN4][j], Pin.OUT).value(step_seq[step_index][j])
+            step_index = (step_index + 1) % len(step_seq)
+            sleep(0.01)  # Adjust speed (lower sleep for faster rotation)
+    print("🛑 Stepper motor stopped.")
+
+def enter_pressed():
+    return select.select([sys.stdin], [], [], 0)[0]
+
+print("🎮 Marble Motion Game Ready! Wave your hand to score 🔥")
+
+try:
+    while True:
+        # Check for motion (detecting marble)
+        if sensor.value() == 0:  # Motion detected (active low)
+            if score < max_score:
+                score += points_per_hit
+                update_score(score)
+            else:
+                print("🎉 Max score reached!")
+
+            # Run stepper motor for 10 seconds when marble is detected
+            print("⚙️ Marble detected! Rotating stepper motor for 10 seconds...")
+            rotate_stepper_motor(10)
+
+            while sensor.value() == 0:  # Wait for sensor to clear
+                sleep(0.05)
+
+        # Check for Enter key press to reset score
+        if enter_pressed():
+            sys.stdin.readline()  # Read the Enter key input
+            reset_score()
+
+        sleep(0.05)
+
+except KeyboardInterrupt:
+    print("Stopping game...")
